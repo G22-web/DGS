@@ -794,9 +794,7 @@ class Model(nn.Module):
                     U = self.txtCNN(U_).reshape(U.shape[0],U.shape[1],-1)
                 else:
                     if self.dataset=='MELD':
-                        ''' 源码 '''
                         # pass
-                        ''' 加上该函数'''
                         U = self.linear_l(U)
                     else:
                         U = self.linear_l(U)
@@ -887,13 +885,6 @@ class Model(nn.Module):
             emotions_feat_a = self.graph_model(features_a, features_v, features_l, seq_lengths, total_sum, dataset, qmask, epoch, pad_audio=False, pad_visual=True, pad_language=True)
             emotions_feat_zero = self.graph_model(features_a, features_v, features_l, seq_lengths, total_sum, dataset, qmask, epoch, pad_audio=True, pad_visual=True, pad_language=True)
 
-            # fraction = torch.tensor(1 / 3.0, dtype=torch.float64)
-            # out_a = fraction * (
-            #             emotions_feat_all - emotions_feat_pad_a - emotions_feat_pad_av - emotions_feat_pad_al + emotions_feat_pad_v + emotions_feat_pad_l + emotions_feat_pad_vl)
-            # out_v = fraction * (
-            #             emotions_feat_all - emotions_feat_pad_v - emotions_feat_pad_av - emotions_feat_pad_vl + emotions_feat_pad_a + emotions_feat_pad_l + emotions_feat_pad_al)
-            # out_l = fraction * (
-            #             emotions_feat_all - emotions_feat_pad_l - emotions_feat_pad_al - emotions_feat_pad_vl + emotions_feat_pad_a + emotions_feat_pad_v + emotions_feat_pad_av)
             fraction_1 = torch.tensor(1 / 6.0, dtype=torch.float64)
             fraction_2 = torch.tensor(2 / 6.0, dtype=torch.float64)
             out_a = fraction_2 * (emotions_feat_all - emotions_feat_vl) + fraction_1 * (
@@ -910,20 +901,6 @@ class Model(nn.Module):
             out = self.dropout_(out)
             out = nn.ReLU()(out)
             log_prob_pad = F.log_softmax(self.smax_fc(out), 1)
-
-            # a = self.pool(a)
-            # v = self.pool(v)
-            # l = self.pool(l)
-            # # print("动态自适应后：")
-            # # print(a.shape)
-            # # print(v.shape)
-            # # print(l.shape)
-            # a = a.view(-1, a.shape[-1])  # torch.Size([869, 28])
-            # v = v.view(-1, v.shape[-1]) # torch.Size([869, 28])
-            # l = l.view(-1, l.shape[-1]) # torch.Size([869, 28])
-            # a = self.smax_fc_avl(a)
-            # v = self.smax_fc_avl(v)
-            # l = self.smax_fc_avl(l)
 
 
         else:
