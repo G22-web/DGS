@@ -902,7 +902,7 @@ if __name__ == '__main__':
         print('Wetight-F-Score:', max(all_fscore))
         print('Miceo-F-Score:', max(all_micro_fscore))
         print('Macro-F-Score:', max(all_macro_fscore))
-        print('Acc-Score:', max(all_acc))  # 平均准确率
+        print('Acc-Score:', max(all_acc)) 
         if not os.path.exists("record_{}_{}_{}.pk".format(today.year, today.month, today.day)):
             with open("record_{}_{}_{}.pk".format(today.year, today.month, today.day),'wb') as f:
                 pk.dump({}, f)
