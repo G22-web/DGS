@@ -13,6 +13,13 @@ To well mitigate these conflicts, we propose a **D**ynamic **G**radient **S**hap
 
 ## Getting Started
 
+### Requirements
+
+- Python 3.8.5
+- torch 1.7.1
+- CUDA 11.3
+- torch-geometric 1.7.2
+
 ### Pre-trained Model
 
 For feature extraction of Food 101 dataset, we use pre-trained BERT ([google-bert/bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased)) and ViT model ([google/vit-base-patch16-224](https://huggingface.co/google/vit-base-patch16-224)).  The pre-trained models are used only in Food 101 dataset.
