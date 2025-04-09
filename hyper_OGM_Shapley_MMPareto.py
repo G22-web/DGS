@@ -90,6 +90,122 @@ class PositionalEncoding(nn.Module):
         
 
 
+class HyperGCN(nn.Module):
+    def __init__(self, a_dim, v_dim, l_dim, n_dim, nlayers, nhidden, nclass, dropout, lamda, alpha, variant, return_feature, use_residue, fusion_type,
+                new_graph='full',n_speakers=2, modals=['a','v','l'], use_speaker=True, use_modal=False, num_L=3, num_K=4):
+        super(HyperGCN, self).__init__()
+        self.return_feature = return_feature  #True
+        self.use_residue = use_residue
+        self.new_graph = new_graph
+
+        #self.graph_net = GCNII_lyc(nfeat=n_dim, nlayers=nlayers, nhidden=nhidden, nclass=nclass,
+        #                       dropout=dropout, lamda=lamda, alpha=alpha, variant=variant,
+        #                       return_feature=return_feature, use_residue=use_residue)
+        self.act_fn = nn.ReLU()
+        self.dropout = dropout
+        self.alpha = alpha
+        self.lamda = lamda
+        self.modals = modals
+        self.modal_embeddings = nn.Embedding(3, n_dim)
+        self.speaker_embeddings = nn.Embedding(n_speakers, n_dim)
+        self.use_speaker = use_speaker
+        self.use_modal = use_modal
+        self.use_position = False
+        #------------------------------------    
+        self.fc1 = nn.Linear(n_dim, nhidden) # (1024, 512)
+        #self.fc2 = nn.Linear(n_dim, nhidden)     
+        self.num_L =  num_L
+        self.num_K =  num_K
+        for ll in range(num_L):
+            setattr(self,'hyperconv%d' %(ll+1), HypergraphConv(nhidden, nhidden))
+        self.act_fn = nn.ReLU()
+        self.hyperedge_weight = nn.Parameter(torch.ones(1000))
+        self.EW_weight = nn.Parameter(torch.ones(5200))
+        self.hyperedge_attr1 = nn.Parameter(torch.rand(nhidden))
+        self.hyperedge_attr2 = nn.Parameter(torch.rand(nhidden))
+        #nn.init.xavier_uniform_(self.hyperedge_attr1)
+        for kk in range(num_K):
+            setattr(self,'conv%d' %(kk+1), highConv(nhidden, nhidden))
+        #self.conv = highConv(nhidden, nhidden)
+        if fusion_type == 'sum':
+            self.fusion_module = SumFusion(output_dim=nclass)
+        elif fusion_type == 'concat':
+            self.fusion_module = ConcatFusion(output_dim=nclass)
+        elif fusion_type == 'film':
+            self.fusion_module = FiLM(output_dim=nclass, x_film=True)
+        elif fusion_type == 'gated':
+            self.fusion_module = GatedFusion(output_dim=nclass, x_gate=True)
+        else:
+            raise NotImplementedError('Incorrect fusion method: {}!'.format(fusion))
+        self.mode = "classify"
+
+
+    def forward(self, a, v, l, dia_len, total_sum, dataset, qmask, epoch, pad_audio=False, pad_visual=False, pad_language=False):
+        # self.audio_net = resnet18(modality='audio', total_sum_=total_sum, dataset= dataset)
+        # self.visual_net = resnet18(modality='visual', total_sum_=total_sum, dataset= dataset)
+        # self.text_net = resnet18(modality='text', total_sum_=total_sum, dataset= dataset)
+
+        qmask = torch.cat([qmask[:x,i,:] for i,x in enumerate(dia_len)],dim=0)
+        spk_idx = torch.argmax(qmask, dim=-1)
+        spk_emb_vector = self.speaker_embeddings(spk_idx)
+        if self.use_speaker:
+            if 'l' in self.modals:
+                l += spk_emb_vector
+        if self.use_position:
+            if 'l' in self.modals:
+                l = self.l_pos(l, dia_len)
+            if 'a' in self.modals:
+                a = self.a_pos(a, dia_len)
+            if 'v' in self.modals:
+                v = self.v_pos(v, dia_len)
+        if self.use_modal:  
+            emb_idx = torch.LongTensor([0, 1, 2]).cuda()
+            emb_vector = self.modal_embeddings(emb_idx)
+
+            if 'a' in self.modals:
+                a += emb_vector[0].reshape(1, -1).expand(a.shape[0], a.shape[1])
+            if 'v' in self.modals:
+                v += emb_vector[1].reshape(1, -1).expand(v.shape[0], v.shape[1])
+            if 'l' in self.modals:
+                l += emb_vector[2].reshape(1, -1).expand(l.shape[0], l.shape[1])
+
+        if pad_audio:
+            a = torch.zeros_like(a)
+
+        if pad_visual:
+            v = torch.zeros_like(v)
+
+        if pad_language:
+            l = torch.zeros_like(l)
+
+       
+        hyperedge_index, edge_index, features, batch, hyperedge_type1 = self.create_hyper_index(a, v, l, dia_len, self.modals)
+        x1 = self.fc1(features)  
+        weight = self.hyperedge_weight[0:hyperedge_index[1].max().item()+1]
+        EW_weight = self.EW_weight[0:hyperedge_index.size(1)]
+
+        edge_attr = self.hyperedge_attr1*hyperedge_type1 + self.hyperedge_attr2*(1-hyperedge_type1)
+        out = x1
+        for ll in range(self.num_L):
+            out = getattr(self,'hyperconv%d' %(ll+1))(out, hyperedge_index, weight, edge_attr, EW_weight, dia_len)             
+        if self.use_residue:
+            out1 = torch.cat([features, out], dim=-1)                                   
+        # out1 = self.reverse_features(dia_len, out)
+
+        #---------------------------------------
+        gnn_edge_index, gnn_features = self.create_gnn_index(a, v, l, dia_len, self.modals)
+        gnn_out = x1
+        for kk in range(self.num_K):
+            gnn_out = gnn_out + getattr(self,'conv%d' %(kk+1))(gnn_out,gnn_edge_index)
+
+        out2 = torch.cat([out,gnn_out], dim=1)
+        if self.use_residue:
+            out2 = torch.cat([features, out2], dim=-1)
+        # out1 = self.reverse_features(dia_len, gnn_out)
+
+        out1 = self.reverse_features(dia_len, out2)
+        
+
     def create_hyper_index(self, a, v, l, dia_len, modals):
         self_loop = False
         num_modality = len(modals)
@@ -122,7 +238,7 @@ class PositionalEncoding(nn.Module):
                 ll = l[0:0+i]
                 aa = a[0:0+i]
                 vv = v[0:0+i]
-                ''' 源码 '''
+               
                 features = torch.cat([ll,aa,vv],dim=0)
                 # features = self.fusion_module(ll,aa,vv)
                 temp = 0+i
@@ -130,7 +246,7 @@ class PositionalEncoding(nn.Module):
                 ll = l[temp:temp+i]
                 aa = a[temp:temp+i]
                 vv = v[temp:temp+i]
-                ''' 源码 '''
+             
                 features_temp = torch.cat([ll,aa,vv],dim=0)
                 # features_temp = self.fusion_module(ll, aa, vv)
                 features =  torch.cat([features,features_temp],dim=0)
@@ -211,7 +327,6 @@ class PositionalEncoding(nn.Module):
                 ll = l[0:0+i]
                 aa = a[0:0+i]
                 vv = v[0:0+i]
-                '''源码'''
                 features = torch.cat([ll,aa,vv],dim=0)
                 # features = self.fusion_module(ll, aa, vv)
                 temp = 0+i
@@ -219,7 +334,6 @@ class PositionalEncoding(nn.Module):
                 ll = l[temp:temp+i]
                 aa = a[temp:temp+i]
                 vv = v[temp:temp+i]
-                '''源码'''
                 features_temp = torch.cat([ll,aa,vv],dim=0)
                 # features_temp = self.fusion_module(ll,aa,vv)
                 features =  torch.cat([features,features_temp],dim=0)
