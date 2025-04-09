@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # 让报错的位置更加准确
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 import numpy as np, argparse, time, pickle, random
 import torch
 import torch.nn as nn
@@ -169,13 +169,12 @@ def train_or_eval_model(model, loss_function, dataloader, epoch, optimizer=None,
     
     return avg_loss, avg_accuracy, labels, preds, masks, avg_fscore, [alphas, alphas_f, alphas_b, vids]
 
-# 自定义梯度钩子函数：捕获和分解梯度
 def register_gradient_hooks(a, v, l, modality_weights):
     hooks = []
     def create_hook(feature, weight, name):
         def hook_fn(grad):
             with torch.no_grad():
-                weight = weight.to(grad.device)  # 确保权重在相同设备上
+                weight = weight.to(grad.device)  
                 if args.modulation == 'OGM_GE':  # bug fixed
                     adjusted_grad = grad * weight + torch.zeros_like(grad).normal_(0,grad.std().item() + 1e-8)
                 elif args.modulation == 'OGM':
@@ -187,7 +186,7 @@ def register_gradient_hooks(a, v, l, modality_weights):
                 return adjusted_grad
         return feature.register_hook(hook_fn)
 
-    # 钩子函数分别注册到音频、视觉、语言模态
+
     hooks.append(create_hook(a, modality_weights[0], "audio"))
     hooks.append(create_hook(v, modality_weights[1], "visual"))
     hooks.append(create_hook(l, modality_weights[2], "language"))
@@ -195,15 +194,15 @@ def register_gradient_hooks(a, v, l, modality_weights):
     return hooks
 
 def calculate_discrepancy_ratio_fusion(f_t, f_a, f_v, f_fusion):
-    # 计算单模态与融合特征的差异
-    d_t = torch.norm(f_t - f_fusion, p=2)  # 文本与融合特征的差异
-    d_a = torch.norm(f_a - f_fusion, p=2)  # 语音与融合特征的差异
-    d_v = torch.norm(f_v - f_fusion, p=2)  # 视觉与融合特征的差异
 
-    # 计算差异比
-    rho_t = d_t / (d_t + d_a + d_v)  # 文本模态的差异比
-    rho_a = d_a / (d_t + d_a + d_v)  # 语音模态的差异比
-    rho_v = d_v / (d_t + d_a + d_v)  # 视觉模态的差异比
+    d_t = torch.norm(f_t - f_fusion, p=2)  
+    d_a = torch.norm(f_a - f_fusion, p=2) 
+    d_v = torch.norm(f_v - f_fusion, p=2)  
+
+
+    rho_t = d_t / (d_t + d_a + d_v) 
+    rho_a = d_a / (d_t + d_a + d_v) 
+    rho_v = d_v / (d_t + d_a + d_v) 
 
     return rho_t, rho_a, rho_v
 
@@ -303,33 +302,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
         out_l = 1 / emotions_feat_all * (fraction_2 * (emotions_feat_all - emotions_feat_av) + fraction_1 * (
                     emotions_feat_al - emotions_feat_a) + fraction_1 * (
                                                      emotions_feat_vl - emotions_feat_v) + fraction_2 * emotions_feat_l)
-        # ''' Encoder后的FC层'''
-        # if args.fusion_method == 'sum':
-        #     out_a = (torch.mm(a, torch.transpose(model.graph_model.fusion_module.fc_x.weight, 0, 1)) +
-        #              model.graph_model.fusion_module.fc_x.bias)
-        #     out_v = (torch.mm(v, torch.transpose(model.graph_model.fusion_module.fc_y.weight, 0, 1)) +
-        #              model.graph_model.fusion_module.fc_y.bias)
-        #     out_l = (torch.mm(l, torch.transpose(model.graph_model.fusion_module.fc_x.weight, 0, 1)) +
-        #              model.graph_model.fusion_module.fc_x.bias)
-        # else:
-        #     # weight_size = model.graph_model.fusion_module.fc_out.weight.size(1)
-        #     # print(out_a.shape) # torch.Size([1, 512, 28])
-        #     # split_size = weight_size // 3
-        #     # print(torsch.transpose(model.graph_model.fusion_module.fc_out.weight[:, :split_size], 0, 1).shape)  # [768, 6]
-        #     # out_a = (torch.mm(out_a, torch.transpose(model.graph_model.fusion_module.fc_out.weight[:, :split_size], 0, 1))
-        #     #          + model.graph_model.fusion_module.fc_out.bias / 3)
-        #     # out_v = (torch.mm(out_v, torch.transpose(model.graph_model.fusion_module.fc_out.weight[:, split_size:2*split_size], 0, 1))
-        #     #          + model.graph_model.fusion_module.fc_out.bias / 3)
-        #     #
-        #     # out_l = (torch.mm(out_l, torch.transpose(model.graph_model.fusion_module.fc_out.weight[:, 2*split_size:], 0, 1))
-        #     #          + model.graph_model.fusion_module.fc_out.bias / 3)
-        #     out_a = (torch.mm(a, torch.transpose(model.graph_model.fusion_module.fc_out.weight, 0,
-        #                                          1)) + model.graph_model.fusion_module.fc_out.bias)
-        #     out_v = (torch.mm(v, torch.transpose(model.graph_model.fusion_module.fc_out.weight, 0,
-        #                                          1)) + model.graph_model.fusion_module.fc_out.bias)
-        #     out_l = (torch.mm(l, torch.transpose(model.graph_model.fusion_module.fc_out.weight, 0,
-        #                                          1)) + model.graph_model.fusion_module.fc_out.bias)
-
+    
         label = torch.cat([label[j][:lengths[j]] for j in range(len(label))])
         loss = loss_function(log_prob, label)
         loss_a = criterion(a, label)
@@ -342,163 +315,6 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
         losses_a.append(loss_a.item())
         losses_v.append(loss_v.item())
         losses_l.append(loss_l.item())
-
-        ''' MMPareto '''
-        # losses_ = [loss, loss_a, loss_v, loss_l]
-        # all_loss = ['both', 'audio', 'visual', 'language']
-        #
-        # grads_audio = {}
-        # grads_visual = {}
-        # grads_language = {}
-        #
-        # if train:
-        #     for idx, loss_type in enumerate(all_loss):
-        #         loss_idx = losses_[idx]
-        #         loss_idx.backward(retain_graph=True)
-        #
-        #         if (loss_type == 'visual'):
-        #             # print("进入visual中.......")
-        #             for tensor_name, param in record_names_visual:
-        #                 if loss_type not in grads_visual.keys():
-        #                     grads_visual[loss_type] = {}
-        #                 grads_visual[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_visual[loss_type]["concat"] = torch.cat(
-        #                 [grads_visual[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_visual])
-        #
-        #         elif (loss_type == 'audio'):
-        #             # print("进入audio中.......")
-        #             for tensor_name, param in record_names_audio:
-        #                 if loss_type not in grads_audio.keys():
-        #                     grads_audio[loss_type] = {}
-        #                 grads_audio[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_audio[loss_type]["concat"] = torch.cat(
-        #                 [grads_audio[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_audio])
-        #         elif (loss_type == 'language'):
-        #             # print("进入language中.......")
-        #             for tensor_name, param in record_names_language:
-        #                 if loss_type not in grads_language.keys():
-        #                     grads_language[loss_type] = {}
-        #                 grads_language[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_language[loss_type]["concat"] = torch.cat(
-        #                 [grads_language[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_language])
-        #
-        #         else:
-        #             # print("进入both中.......")
-        #             for tensor_name, param in record_names_audio:
-        #                 if loss_type not in grads_audio.keys():
-        #                     grads_audio[loss_type] = {}
-        #                 grads_audio[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_audio[loss_type]["concat"] = torch.cat(
-        #                 [grads_audio[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_audio])
-        #             for tensor_name, param in record_names_visual:
-        #                 if loss_type not in grads_visual.keys():
-        #                     grads_visual[loss_type] = {}
-        #                 grads_visual[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_visual[loss_type]["concat"] = torch.cat(
-        #                 [grads_visual[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_visual])
-        #             for tensor_name, param in record_names_language:
-        #                 if loss_type not in grads_language.keys():
-        #                     grads_language[loss_type] = {}
-        #                 grads_language[loss_type][tensor_name] = param.grad.data.clone()
-        #             grads_language[loss_type]["concat"] = torch.cat(
-        #                 [grads_language[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_language])
-        #
-        #         optimizer.zero_grad()
-        #
-        #     this_cos_audio = F.cosine_similarity(grads_audio['both']["concat"], grads_audio['audio']["concat"], dim=0)
-        #     this_cos_visual = F.cosine_similarity(grads_visual['both']["concat"], grads_visual['visual']["concat"],dim=0)
-        #     this_cos_language = F.cosine_similarity(grads_language['both']["concat"], grads_language['language']["concat"], dim=0)
-        #
-        #     audio_task = ['both', 'audio']
-        #     visual_task = ['both', 'visual']
-        #     language_task = ['both', 'language']
-        #
-        #     # audio_k[0]: weight of multimodal loss
-        #     # audio_k[1]: weight of audio loss
-        #     # if cos angle <0 , solve pareto
-        #     # else use equal weight
-        #
-        #     audio_k = [0, 0]
-        #     visual_k = [0, 0]
-        #     language_k = [0, 0]
-        #     # print("------------余弦-----------------")
-        #     # print("语音余弦：", this_cos_audio)
-        #     # print("视觉余弦：", this_cos_visual)
-        #     # print("文本余弦：", this_cos_language)
-        #     if (this_cos_audio > 0):
-        #         audio_k[0] = 0.5
-        #         audio_k[1] = 0.5
-        #     else:
-        #         audio_k, min_norm = MinNormSolver.find_min_norm_element([list(grads_audio[t].values()) for t in audio_task])
-        #     if (this_cos_visual > 0):
-        #         visual_k[0] = 0.5
-        #         visual_k[1] = 0.5
-        #     else:
-        #         visual_k, min_norm = MinNormSolver.find_min_norm_element([list(grads_visual[t].values()) for t in visual_task])
-        #     if (this_cos_language > 0):
-        #         language_task[0] = 0.5
-        #         language_task[1] = 0.5
-        #     else:
-        #         language_k, min_norm = MinNormSolver.find_min_norm_element([list(grads_language[t].values()) for t in language_task])
-        #
-        #     gamma = 3.5
-        #
-        #     loss_all = loss + loss_a + loss_v + loss_l
-        #     loss_all.backward()
-        #
-        #     for name, param in model.named_parameters():
-        #         if param.grad is not None:
-        #             # layer = re.split('[_.]', str(name))
-        #             layer = str(name).split('.')[0]
-        #             if ('linear_a' in layer):
-        #                 three_norm = torch.norm(param.grad.data.clone())
-        #                 new_grad = 2 * audio_k[0] * grads_audio['both'][name] + 2 * audio_k[1] * grads_audio['audio'][
-        #                     name]
-        #                 new_norm = torch.norm(new_grad)
-        #                 diff = three_norm / new_norm
-        #                 # print("------------语音-----------------")
-        #                 # print("语音diff：", diff)
-        #                 # print("语音three_norm：", three_norm)
-        #                 # print("语音new_norm：", new_norm)
-        #                 if (diff > 1):
-        #                     param.grad = diff * new_grad * gamma
-        #                 else:
-        #                     param.grad = new_grad * gamma
-        #
-        #             if ('linear_v' in layer):
-        #                 three_norm = torch.norm(param.grad.data.clone())
-        #                 new_grad = 2 * visual_k[0] * grads_visual['both'][name] + 2 * visual_k[1] * \
-        #                            grads_visual['visual'][name]
-        #                 new_norm = torch.norm(new_grad)
-        #                 diff = three_norm / new_norm
-        #                 # print("------------视觉-----------------")
-        #                 # print("视觉diff：", diff)
-        #                 # print("视觉three_norm：", three_norm)
-        #                 # print("视觉new_norm：", new_norm)
-        #                 if (diff > 1):
-        #                     param.grad = diff * new_grad * gamma
-        #                 else:
-        #                     param.grad = new_grad * gamma
-        #
-        #             if ('linear_l' in layer):
-        #                 three_norm = torch.norm(param.grad.data.clone())
-        #                 new_grad = 2 * language_k[0] * grads_language['both'][name] + 2 * language_k[1] * \
-        #                            grads_language['language'][name]
-        #                 new_norm = torch.norm(new_grad)
-        #                 if new_norm == 0:
-        #                     pass
-        #                 else:
-        #                     diff = three_norm / new_norm
-        #                     # print("------------文本-----------------")
-        #                     # print("文本diff：", diff)
-        #                     # print("文本three_norm：", three_norm)
-        #                     # print("文本new_norm：", new_norm)
-        #                     if (diff > 1):
-        #                         param.grad = diff * new_grad * gamma
-        #                     else:
-        #                         param.grad = new_grad * gamma
-        #     losses_MMPareto.append(loss_all.item())
-        #     optimizer.step()
 
         ''' Shapley + MMPareto '''
         losses_ = [loss, loss_a, loss_v, loss_l]
@@ -513,7 +329,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                 loss_idx.backward(retain_graph=True)
 
                 if (loss_type == 'visual'):
-                    # print("进入visual中.......")
+                  
                     for tensor_name, param in record_names_visual:
                         if loss_type not in grads_visual.keys():
                             grads_visual[loss_type] = {}
@@ -522,7 +338,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                         [grads_visual[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_visual])
 
                 elif (loss_type == 'audio'):
-                    # print("进入audio中.......")
+                   
                     for tensor_name, param in record_names_audio:
                         if loss_type not in grads_audio.keys():
                             grads_audio[loss_type] = {}
@@ -530,7 +346,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                     grads_audio[loss_type]["concat"] = torch.cat(
                         [grads_audio[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_audio])
                 elif (loss_type == 'language'):
-                    # print("进入language中.......")
+                  
                     for tensor_name, param in record_names_language:
                         if loss_type not in grads_language.keys():
                             grads_language[loss_type] = {}
@@ -539,7 +355,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                         [grads_language[loss_type][tensor_name].flatten() for tensor_name, _ in record_names_language])
 
                 else:
-                    # print("进入both中.......")
+                   
                     for tensor_name, param in record_names_audio:
                         if loss_type not in grads_audio.keys():
                             grads_audio[loss_type] = {}
@@ -579,10 +395,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
             audio_k = [0, 0]
             visual_k = [0, 0]
             language_k = [0, 0]
-            # print("-----------------------------")
-            # print("语音余弦：", this_cos_audio)
-            # print("视觉余弦：", this_cos_visual)
-            # print("文本余弦：", this_cos_language)
+         
             if (this_cos_audio > 0):
                 audio_k[0] = 0.5
                 audio_k[1] = 0.5
@@ -617,10 +430,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                             name]
                         new_norm = torch.norm(new_grad)
                         diff = three_norm / new_norm
-                        # print("------------语音-----------------")
-                        # print("语音diff：", diff)
-                        # print("语音three_norm：", three_norm)
-                        # print("语音new_norm：", new_norm)
+                      
                         if (diff > 1):
                             param.grad = diff * new_grad * gamma
                         else:
@@ -632,10 +442,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                                    grads_visual['visual'][name]
                         new_norm = torch.norm(new_grad)
                         diff = three_norm / new_norm
-                        # print("------------视觉-----------------")
-                        # print("视觉diff：", diff)
-                        # print("视觉three_norm：", three_norm)
-                        # print("视觉new_norm：", new_norm)
+                      
                         if (diff > 1):
                             param.grad = diff * new_grad * gamma
                         else:
@@ -650,10 +457,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                             pass
                         else:
                             diff = three_norm / new_norm
-                            # print("------------文本-----------------")
-                            # print("文本diff：", diff)
-                            # print("文本three_norm：", three_norm)
-                            # print("文本new_norm：", new_norm)
+                           
                             if (diff > 1):
                                 param.grad = diff * new_grad * gamma
                             else:
@@ -665,11 +469,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
             ratio_v = score_v
             ratio_a = score_a
             ratio_l = score_l
-            # ratio_v = (score_v / score_a + score_v / score_l) / 2
-            # ratio_a = (score_a / score_v + score_a / score_l) / 2
-            # ratio_l = (score_l / score_a + score_l / score_v) / 2
-
-            # 抑制主导模态的优化
+          
             if ratio_v >= 1:
                 coeff_v = 1 - tanh(args.alpha_ * relu(ratio_v))
             else:
@@ -685,27 +485,6 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
             else:
                 coeff_l = 1
 
-            # 加快被抑制模态的学习速度
-            # if ratio_v < 1:
-            #     coeff_v = 1 - tanh(args.alpha_ * relu(ratio_v))
-            # else:
-            #     coeff_v = 1
-            #
-            # if ratio_a < 1:
-            #     coeff_a = 1 - tanh(args.alpha_ * relu(ratio_a))
-            # else:
-            #     coeff_a = 1
-            #
-            # if ratio_l < 1:
-            #     coeff_l = 1 - tanh(args.alpha_ * relu(ratio_l))
-            # else:
-            #     coeff_l = 1
-
-            # print("调制后coeff_v:", coeff_v)
-            # print("调制后coeff_a:", coeff_a)
-            # print("调制后coeff_l:", coeff_l)
-
-            # 初始化 hooks 为一个空列表
             hooks = []
             if args.modulation_starts <= epoch <= args.modulation_ends:  # bug fixed
                 for name, parms in model.named_parameters():
@@ -715,21 +494,21 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
                     # if 'audio' in layer and len(parms.grad.size()) == 4:
                     if parms.grad != None:
                         if 'linear_a' in layer:
-                            # print("audio梯度调制中")
+
                             if args.modulation == 'OGM_GE':  # bug fixed
                                 parms.grad = parms.grad * coeff_a + \
                                              torch.zeros_like(parms.grad).normal_(0, parms.grad.std().item() + 1e-8)
                             elif args.modulation == 'OGM':
                                 parms.grad *= coeff_a
                         if 'linear_v' in layer:
-                            # print("visual梯度调制中")
+
                             if args.modulation == 'OGM_GE':  # bug fixed
                                 parms.grad = parms.grad * coeff_v + \
                                              torch.zeros_like(parms.grad).normal_(0, parms.grad.std().item() + 1e-8)
                             elif args.modulation == 'OGM':
                                 parms.grad *= coeff_v
                         if 'linear_l' in layer:
-                            # print("text梯度调制中")
+     
                             if args.modulation == 'OGM_GE':  # bug fixed
                                 parms.grad = parms.grad * coeff_l + \
                                              torch.zeros_like(parms.grad).normal_(0, parms.grad.std().item() + 1e-8)
@@ -743,8 +522,6 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
             losses_MMPareto.append(loss_all.item())
             optimizer.step()
 
-            '''计算模态间的差异比'''
-            # rho_t, rho_a, rho_v = calculate_discrepancy_ratio(out_l, out_a, out_v)
             rho_t, rho_a, rho_v = calculate_discrepancy_ratio_fusion(emotions_feat_l, emotions_feat_a, emotions_feat_v,
                                                                      emotions_feat_all)
             ratios_v.append(rho_v.item())
@@ -793,11 +570,7 @@ def train_or_eval_graph_model(model, loss_function, dataloader, epoch, cuda, mod
     avg_micro_fscore = round(f1_score(labels, preds, average='micro', labels=list(range(1, 7))) * 100, 2)
     avg_macro_fscore = round(f1_score(labels, preds, average='macro') * 100, 2)
 
-    # if scheduler == None:
-    #     pass
-    # else:
-    #     scheduler.step()
-
+ 
     return avg_loss, avg_loss_a, avg_loss_v, avg_loss_l, avg_accuracy, labels, preds, avg_fscore, avg_micro_fscore, avg_macro_fscore, vids, ei, et, en, el
 
 
@@ -1144,7 +917,7 @@ if __name__ == '__main__':
         print('Wetight-F-Score:', max(all_fscore))
         print('Miceo-F-Score:', max(all_micro_fscore))
         print('Macro-F-Score:', max(all_macro_fscore))
-        print('Acc-Score:', max(all_acc))  # 平均准确率
+        print('Acc-Score:', max(all_acc))  
         if not os.path.exists("record_{}_{}_{}.pk".format(today.year, today.month, today.day)):
             with open("record_{}_{}_{}.pk".format(today.year, today.month, today.day),'wb') as f:
                 pk.dump({}, f)
