@@ -1,4 +1,3 @@
-# Classifier-guided Gradient Modulation for Enhanced Multimodal Learning
 
 [ACM MM 2025 Under Review] Official PyTorch implementation of the paper "Mitigating Modal Imbalance in Multimodal Emotion Recognition via Dynamic Gradient Shaping"
 
